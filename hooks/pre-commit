@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Pre-commit hook: scan only the lines being ADDED in the staged diff.
+# Install: cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+# Set SECSCAN_HOME to the scanner checkout when the hook is copied elsewhere.
+# Uses ./.secretscan-baseline.json when present. Exit 1 blocks the commit, 2 = could not scan.
+set -o pipefail
+HOME_DIR="${SECSCAN_HOME:-$(cd "$(dirname "$0")/.." && pwd)}"
+PY="${SECSCAN_PYTHON:-}"
+if [ -z "$PY" ]; then
+  if command -v python3 >/dev/null 2>&1 && python3 -c '' >/dev/null 2>&1; then PY=python3; else PY=python; fi
+fi
+args=(scan --diff -)
+[ -f .secretscan-baseline.json ] && args+=(--baseline .secretscan-baseline.json)
+diff=$(git diff --cached --unified=0 --no-color) || { echo "pre-commit: git diff failed" >&2; exit 2; }
+[ -z "$diff" ] && exit 0
+printf '%s\n' "$diff" | "$PY" -c 'import sys; sys.path.insert(0, sys.argv[1]); from secrets_scanner.cli import main; sys.exit(main(sys.argv[2:]))' "$HOME_DIR" "${args[@]}"
